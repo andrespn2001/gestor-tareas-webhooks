@@ -1,64 +1,39 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ANDRES LUCAS — Webhook Logging Pro</title>
+    <title>ANDRES LUCAS — Gestor de Tareas PRO MAX</title>
     <link rel="stylesheet" href="styles.css">
-    <link href="https://fonts.googleapis.com/css2?family=Fira+Code&family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
 </head>
 <body>
 
-    <!-- APP -->
-    <div class="app-side">
-        <h1>☁️ ANDRES LUCAS LOGGER</h1>
-        <p class="sub">Haz clic en una tarea para completarla y disparar el webhook.</p>
+    <!-- Contenedor para notificaciones Toast -->
+    <div id="notifications-container"></div>
+
+    <div class="app-container">
+        <header>
+            <h1>☁️ ANDRES LUCAS PRO MAX</h1>
+            <div class="counter-badge"><span id="pending-counter">0</span> tareas pendientes</div>
+            
+            <label class="offline-toggle">
+                <input type="checkbox" id="offline-switch"> 📴 Offline
+            </label>
+        </header>
         
-        <div class="input-group">
-            <input type="text" id="taskInput" placeholder="Nueva tarea...">
-            <button onclick="addTask()">Añadir</button>
-        </div>
-        <ul id="taskList"></ul>
-    </div>
-
-    <!-- LOGS -->
-    <div class="logs-side">
-        <!-- Contadores -->
-        <div class="stats-row">
-            <div class="stat-box stat-ok">
-                <div class="num" id="count-ok">0</div>
-                <div class="label">Webhooks OK</div>
+        <div class="controls">
+            <div class="input-group">
+                <input type="text" id="task-input" placeholder="Nueva tarea...">
+                <button class="btn-primary" id="add-button">Añadir</button>
             </div>
-            <div class="stat-box stat-error">
-                <div class="num" id="count-error">0</div>
-                <div class="label">Webhooks Fallidos</div>
+            <div class="action-row">
+                <button class="btn-secondary" style="flex:1" id="reload-button">🔄 Recargar</button>
             </div>
         </div>
 
-        <!-- Consola de Chrome -->
-        <div class="chrome-console" id="console">
-            <div class="console-header-bar">
-                <span class="active">Console</span>
-                <span>Network</span>
-                <span>Sources</span>
-            </div>
-            <div style="color:#666;">// Esperando acciones...</div>
-        </div>
-
-        <!-- Tabla de Supabase -->
-        <div class="supabase-panel">
-            <div class="supabase-header">
-                <span>📊 Supabase → tabla: webhook_logs</span>
-                <span style="color:#2ecc71;">● Live</span>
-            </div>
-            <div class="supabase-table" id="supabaseTable">
-                <div class="table-row header">
-                    <span>FECHA</span>
-                    <span>ERROR</span>
-                    <span>ESTADO</span>
-                </div>
-            </div>
-        </div>
+        <ul id="task-list"></ul>
     </div>
 
     <script src="app.js"></script>
