@@ -1,135 +1,208 @@
 // ==========================================
-// ESTADO DE LA APP
+// 1. CONFIGURACIÓN Y ELEMENTOS DEL DOM
 // ==========================================
-let tasks = [
-    { id: 1, text: "Estudiar Webhooks", completed: false },
-    { id: 2, text: "Configurar Make", completed: false }
-];
-let okCount = 0;
-let errorCount = 0;
+const taskInput = document.getElementById('task-input');
+const addButton = document.getElementById('add-button');
+const reloadButton = document.getElementById('reload-button');
+const taskList = document.getElementById('task-list');
+const pendingCounter = document.getElementById('pending-counter');
+const offlineSwitch = document.getElementById('offline-switch');
 
-const taskList = document.getElementById('taskList');
-const taskInput = document.getElementById('taskInput');
-const consoleBox = document.getElementById('console');
-const supabaseTable = document.getElementById('supabaseTable');
+let tasks = [];
+let offlineQueue = [];
+
+const isOnline = () => !offlineSwitch.checked;
 
 // ==========================================
-// RENDERIZADO
+// 2. CAPA DE DATOS (Simulador de Supabase)
 // ==========================================
+let mockDatabase = JSON.parse(localStorage.getItem('db-pro-max')) || [];
+const saveToLocalStorage = () => localStorage.setItem('db-pro-max', JSON.stringify(mockDatabase));
+
+const api = {
+    fetchAll: () => new Promise(resolve => setTimeout(() => resolve([...mockDatabase]), 600)),
+    
+    create: (task) => new Promise((resolve, reject) => {
+        if (!isOnline()) return reject(new Error("Offline"));
+        setTimeout(() => {
+            const newTask = { id: Date.now(), ...task };
+            mockDatabase.unshift(newTask); 
+            saveToLocalStorage(); 
+            resolve(newTask);
+        }, 500);
+    }),
+    
+    update: (id, changes) => new Promise((resolve, reject) => {
+        if (!isOnline()) return reject(new Error("Offline"));
+        setTimeout(() => {
+            mockDatabase = mockDatabase.map(t => t.id === id ? { ...t, ...changes } : t); 
+            saveToLocalStorage();
+            resolve(mockDatabase.find(t => t.id === id));
+        }, 400);
+    }),
+    
+    delete: (id) => new Promise((resolve, reject) => {
+        if (!isOnline()) return reject(new Error("Offline"));
+        setTimeout(() => { 
+            mockDatabase = mockDatabase.filter(t => t.id !== id); 
+            saveToLocalStorage(); 
+            resolve(true); 
+        }, 400);
+    })
+};
+
+// ==========================================
+// 3. CAPA DE INTERFAZ (UI y Notificaciones)
+// ==========================================
+function showNotification(message, type = 'info') {
+    const container = document.getElementById('notifications-container');
+    const toast = document.createElement('div');
+    toast.className = `notification ${type}`;
+    toast.textContent = message;
+    
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+}
+
+function updateCounter() {
+    const pendingTasks = tasks.filter(t => !t.completed).length;
+    pendingCounter.textContent = pendingTasks;
+}
+
 function renderTasks() {
     taskList.innerHTML = '';
-    tasks.forEach(t => {
+    
+    tasks.forEach(task => {
         const li = document.createElement('li');
-        if (t.completed) li.classList.add('completed');
+        li.dataset.id = task.id;
+        if (task.completed) li.classList.add('completed');
+        
         li.innerHTML = `
-            <span>${t.text}</span>
-            <span class="status-icon">${t.completed ? '✅' : '⏳'}</span>
+            <div class="task-info" onclick="handleToggleTask(${task.id})">
+                <span class="task-text">${task.text}</span>
+            </div>
+            <button class="delete-btn" onclick="handleDeleteTask(${task.id})">🗑</button>
         `;
-        li.onclick = () => toggleTask(t.id);
         taskList.appendChild(li);
     });
-}
-
-function addTask() {
-    if (!taskInput.value.trim()) return;
-    tasks.push({ id: Date.now(), text: taskInput.value.trim(), completed: false });
-    taskInput.value = '';
-    renderTasks();
+    
+    updateCounter();
 }
 
 // ==========================================
-// LÓGICA DEL WEBHOOK CON LOGGING
+// 4. LÓGICA DE NEGOCIO (Eventos y Estado)
 // ==========================================
-async function toggleTask(id) {
-    const tarea = tasks.find(x => x.id === id);
-    if (!tarea) return;
-
-    tarea.completed = !tarea.completed;
-    renderTasks();
-
-    if (tarea.completed) {
-        await enviarWebhookSeguro(tarea);
-    }
-}
-
-async function enviarWebhookSeguro(tarea) {
-    const timestamp = new Date().toISOString();
-    const url = 'https://hook.make.com/fake-webhook-url';
-
-    // Simulamos un 30% de fallo en la red
-    const simulacionFallo = Math.random() < 0.3;
-
+async function loadTasks() {
     try {
-        // Simulamos la latencia de red
-        await sleep(800);
-
-        if (simulacionFallo) {
-            throw new Error("Error 500: El servidor de Make no responde");
-        }
-
-        // === CASO ÉXITO ===
-        okCount++;
-        document.getElementById('count-ok').textContent = okCount;
-        
-        console.log(`[WEBHOOK OK] POST ${url} → Tarea ID: ${tarea.id}`);
-        addSupabaseLog(timestamp, "Ninguno", "OK");
-
+        tasks = await api.fetchAll();
+        renderTasks();
     } catch (error) {
-        // === CASO ERROR (TRY/CATCH EN ACCIÓN) ===
-        errorCount++;
-        document.getElementById('count-error').textContent = errorCount;
-        
-        console.error(`[WEBHOOK ERROR] Tarea ${tarea.id}: ${error.message}`);
-        console.warn(`[FALLBACK] La tarea se guardó localmente. Se reintentará luego.`);
-        
-        addSupabaseLog(timestamp, error.message, "ERROR");
+        showNotification('Error al cargar las tareas', 'error');
     }
 }
 
-// ==========================================
-// UTILIDADES DE UI
-// ==========================================
-function logToConsole(msg, type) {
-    const div = document.createElement('div');
-    div.className = 'log-line';
-    
-    const time = new Date().toLocaleTimeString();
-    let colorClass = '';
-    if (type === 'error') colorClass = 'log-error';
-    else if (type === 'ok') colorClass = 'log-ok';
-    else if (type === 'warn') colorClass = 'log-warn';
+async function handleAddTask() {
+    const text = taskInput.value.trim();
+    if (!text) return showNotification('Escribe una tarea primero', 'error');
 
-    div.innerHTML = `<span class="log-time">[${time}]</span> <span class="${colorClass}">${msg}</span>`;
-    consoleBox.appendChild(div);
-    consoleBox.scrollTop = consoleBox.scrollHeight;
+    // Lógica Offline
+    if (!isOnline()) {
+        offlineQueue.push({ action: 'create', text });
+        tasks.unshift({ id: Date.now(), text, completed: false });
+        renderTasks();
+        taskInput.value = '';
+        return showNotification('Guardado offline. Se sincronizará luego.', 'info');
+    }
+
+    // Lógica Online
+    addButton.classList.add('loading');
+    try {
+        const newTask = await api.create({ text, completed: false });
+        tasks.unshift(newTask);
+        renderTasks();
+        taskInput.value = '';
+        showNotification('Tarea añadida', 'success');
+    } catch (error) {
+        showNotification('Error al añadir la tarea', 'error');
+    } finally {
+        addButton.classList.remove('loading');
+    }
 }
 
-function addSupabaseLog(timestamp, errorMsg, status) {
-    const div = document.createElement('div');
-    div.className = 'table-row';
-    
-    const timeShort = new Date(timestamp).toLocaleTimeString();
-    const statusClass = status === 'OK' ? 'ok' : 'error';
+async function handleToggleTask(id) {
+    const task = tasks.find(t => t.id === id);
+    if (!task) return;
 
-    div.innerHTML = `
-        <span style="color:#94a3b8;">${timeShort}</span>
-        <span style="color:${status === 'OK' ? '#475569' : '#e74c3c'};">${errorMsg}</span>
-        <span><span class="badge-status ${statusClass}">${status}</span></span>
-    `;
-    supabaseTable.appendChild(div);
-    supabaseTable.scrollTop = supabaseTable.scrollHeight;
+    // UI Optimista
+    task.completed = !task.completed;
+    renderTasks();
+
+    if (isOnline()) {
+        try {
+            await api.update(id, { completed: task.completed });
+        } catch (error) {
+            // Revertir si falla
+            task.completed = !task.completed;
+            renderTasks();
+            showNotification('Error al actualizar la tarea', 'error');
+        }
+    }
 }
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+async function handleDeleteTask(id) {
+    if (!confirm('¿Seguro que quieres eliminar esta tarea?')) return;
 
-// Sobrescribimos console.log y console.error para que salgan en nuestra UI
-const originalLog = console.log;
-const originalError = console.error;
-const originalWarn = console.warn;
+    // Animación de salida
+    const li = document.querySelector(`li[data-id="${id}"]`);
+    if (li) li.classList.add('removing');
+    
+    setTimeout(async () => {
+        tasks = tasks.filter(t => t.id !== id);
+        renderTasks();
+        
+        if (isOnline()) {
+            try {
+                await api.delete(id);
+                showNotification('Tarea eliminada', 'success');
+            } catch (error) {
+                showNotification('Error al eliminar la tarea', 'error');
+            }
+        }
+    }, 300);
+}
 
-console.log = function(msg) { originalLog(msg); logToConsole(msg, 'ok'); };
-console.error = function(msg) { originalError(msg); logToConsole(msg, 'error'); };
-console.warn = function(msg) { originalWarn(msg); logToConsole(msg, 'warn'); };
+// ==========================================
+// 5. INICIALIZACIÓN Y EVENTOS
+// ==========================================
+addButton.addEventListener('click', handleAddTask);
 
-// Inicio
-renderTasks();
+taskInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') handleAddTask();
+});
+
+reloadButton.addEventListener('click', async () => {
+    reloadButton.classList.add('loading');
+    await loadTasks();
+    reloadButton.classList.remove('loading');
+    showNotification('Datos actualizados', 'success');
+});
+
+// Sincronización Offline/Online
+offlineSwitch.addEventListener('change', async () => {
+    if (isOnline()) {
+        if (offlineQueue.length > 0) {
+            showNotification(`Sincronizando ${offlineQueue.length} tareas...`, 'info');
+            for (let item of offlineQueue) {
+                if (item.action === 'create') await api.create({ text: item.text, completed: false });
+            }
+            offlineQueue = [];
+            await loadTasks();
+            showNotification('¡Todo sincronizado!', 'success');
+        }
+    } else {
+        showNotification('Modo offline activado', 'error');
+    }
+});
+
+// Iniciar aplicación al cargar
+loadTasks();
